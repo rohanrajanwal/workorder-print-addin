@@ -9,8 +9,8 @@
         "name": {
           "en": "Print Work Order"
         },
-        "icon": "icon.svg",
-        "click": "printWorkOrder.js"
+        "icon": "https://rohanrajanwal.github.io/workorder-print-addin/icon.svg",
+        "click": "https://rohanrajanwal.github.io/workorder-print-addin/printWorkOrder.js"
       }
     }
   ],
