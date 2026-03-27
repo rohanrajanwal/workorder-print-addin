@@ -1,0 +1,18 @@
+{
+  "name": "Print Work Order",
+  "supportEmail": "support@geotab.com",
+  "version": "1.0.0",
+  "items": [
+    {
+      "page": "maintenanceWorkOrderDetails",
+      "button": {
+        "name": {
+          "en": "Print Work Order"
+        },
+        "icon": "icon.svg",
+        "click": "printWorkOrder.js"
+      }
+    }
+  ],
+  "isSigned": false
+}
