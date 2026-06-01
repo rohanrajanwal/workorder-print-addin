@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Print Work Order</title>
+  <script src="printWorkOrder.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px; color: #1a1a1a; background: #f9f9f9;
+      padding: 24px 20px;
+    }
+    h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { font-size: 12px; color: #888; margin-bottom: 20px; }
+
+    #status-msg { color: #555; font-size: 13px; margin-bottom: 16px; }
+
+    /* Search / manual ID entry */
+    .input-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .input-row input {
+      flex: 1; padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px;
+      font-size: 14px;
+    }
+    .input-row input:focus { outline: none; border-color: #2D7FF9; box-shadow: 0 0 0 2px rgba(45,127,249,.2); }
+    .btn {
+      padding: 8px 16px; border-radius: 4px; font-size: 13px;
+      cursor: pointer; border: 1px solid #ccc; background: #fff; color: #333;
+      white-space: nowrap;
+    }
+    .btn-primary { background: #2D7FF9; color: #fff; border-color: #2D7FF9; }
+    .btn-primary:hover { background: #1a6ce5; }
+    .btn:not(.btn-primary):hover { background: #f0f0f0; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* WO list */
+    .wo-list { border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; }
+    .wo-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 14px; border-bottom: 1px solid #f0f0f0; background: #fff;
+      cursor: pointer; transition: background 0.1s;
+    }
+    .wo-item:last-child { border-bottom: none; }
+    .wo-item:hover { background: #f5f8ff; }
+    .wo-item-left { flex: 1; min-width: 0; }
+    .wo-ref { font-weight: 600; font-size: 13px; }
+    .wo-meta { font-size: 11px; color: #888; margin-top: 2px; }
+    .wo-status {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px;
+      font-weight: 600; white-space: nowrap; margin-left: 12px;
+    }
+    .status-InProgress { background: #e8f4fd; color: #1976d2; }
+    .status-Pending { background: #fff8e1; color: #f57f17; }
+    .status-Completed { background: #e8f5e9; color: #2e7d32; }
+    .status-Deferred { background: #fce4ec; color: #c62828; }
+
+    .empty-msg { text-align: center; color: #999; padding: 24px; font-size: 13px; }
+    .loading { color: #888; font-size: 13px; margin: 12px 0; }
+    .error-msg { color: #c62828; font-size: 13px; margin: 12px 0; }
+    .divider { border-top: 1px solid #e0e0e0; margin: 16px 0; }
+    .section-label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h2>Print Work Order</h2>
+  <p class="subtitle">Select a work order to generate a printable Repair Order</p>
+
+  <div id="status-msg"></div>
+
+  <!-- Manual entry -->
+  <div class="section-label">Enter Work Order Reference</div>
+  <div class="input-row">
+    <input id="wo-ref-input" type="text" placeholder="Reference # or paste WO ID">
+    <button class="btn btn-primary" id="search-btn" onclick="searchByRef()">Search</button>
+  </div>
+
+  <!-- Recent WOs list -->
+  <div id="wo-section" style="display:none">
+    <div class="divider"></div>
+    <div class="section-label">Recent Open Work Orders</div>
+    <div id="wo-container"></div>
+  </div>
+
+<script>
+var _api = null;
+var _state = null;
+
+// Called by MyGeotab add-in framework
+function initialize(freshApi, freshState, callback) {
+  _api = freshApi;
+  _state = freshState;
+
+  // Check if we were launched with a specific WO state
+  try {
+    var pageState = _state.getState ? _state.getState() : {};
+    var woId = pageState && (pageState.id || pageState.entity);
+    if (woId && typeof woId === 'string' && woId.length > 4) {
+      setStatus('Printing work order...');
+      triggerPrint(woId);
+      if (callback) callback();
+      return;
+    }
+  } catch (e) { /* no state context */ }
+
+  // Load recent work orders
+  loadRecentWOs();
+  if (callback) callback();
+}
+
+function setStatus(msg, isError) {
+  var el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = isError ? 'error-msg' : 'loading';
+}
+
+function clearStatus() {
+  document.getElementById('status-msg').textContent = '';
+}
+
+async function loadRecentWOs() {
+  if (!_api) return;
+  setStatus('Loading recent work orders...');
+  try {
+    var results = await _api.call('Get', {
+      typeName: 'MaintenanceWorkOrder',
+      search: {},
+      resultsLimit: 20
+    });
+    clearStatus();
+    var section = document.getElementById('wo-section');
+    var container = document.getElementById('wo-container');
+    if (!results || results.length === 0) {
+      container.innerHTML = '<div class="empty-msg">No work orders found</div>';
+    } else {
+      // Sort by dateOpened desc, prefer open/in-progress
+      results.sort(function(a, b) {
+        var order = {InProgress: 0, Pending: 1, Deferred: 2, Completed: 3, Closed: 4};
+        var oa = order[a.status] !== undefined ? order[a.status] : 5;
+        var ob = order[b.status] !== undefined ? order[b.status] : 5;
+        if (oa !== ob) return oa - ob;
+        return new Date(b.dateOpened || 0) - new Date(a.dateOpened || 0);
+      });
+      container.innerHTML = results.map(function(wo) {
+        var ref = wo.reference || wo.id;
+        var opened = wo.dateOpened ? new Date(wo.dateOpened).toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : '';
+        var statusClass = 'status-' + (wo.status || 'Pending');
+        return '<div class="wo-item" onclick="printWO(\'' + wo.id + '\')">'
+          + '<div class="wo-item-left">'
+          + '<div class="wo-ref">' + escHtml(ref) + '</div>'
+          + (opened ? '<div class="wo-meta">Opened ' + opened + '</div>' : '')
+          + '</div>'
+          + '<span class="wo-status ' + statusClass + '">' + (wo.status || '') + '</span>'
+          + '</div>';
+      }).join('');
+    }
+    section.style.display = 'block';
+  } catch (e) {
+    setStatus('Could not load work orders: ' + e.message, true);
+  }
+}
+
+function escHtml(str) {
+  var d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
+}
+
+async function searchByRef() {
+  var ref = document.getElementById('wo-ref-input').value.trim();
+  if (!ref) return;
+  if (!_api) { alert('Not connected to MyGeotab. Please open this panel from within MyGeotab.'); return; }
+
+  setStatus('Searching...');
+  document.getElementById('search-btn').disabled = true;
+  try {
+    // Try searching by ID first (if it looks like an ID)
+    var results;
+    if (ref.length > 16 && /^[a-zA-Z0-9_-]+$/.test(ref)) {
+      try {
+        results = await _api.call('Get', { typeName: 'MaintenanceWorkOrder', search: { id: ref } });
+      } catch (e) { results = []; }
+    }
+    // Try reference number search
+    if (!results || results.length === 0) {
+      var all = await _api.call('Get', { typeName: 'MaintenanceWorkOrder', search: {} });
+      results = all.filter(function(wo) {
+        return wo.reference && wo.reference.toLowerCase().includes(ref.toLowerCase());
+      });
+    }
+    if (results && results.length > 0) {
+      clearStatus();
+      triggerPrint(results[0].id);
+    } else {
+      setStatus('No work order found for: ' + ref, true);
+    }
+  } catch (e) {
+    setStatus('Search error: ' + e.message, true);
+  } finally {
+    document.getElementById('search-btn').disabled = false;
+  }
+}
+
+function printWO(id) {
+  triggerPrint(id);
+}
+
+function triggerPrint(id) {
+  if (!_api) { alert('Not connected to MyGeotab API.'); return; }
+  // Reuse the button handler logic with a synthesized state
+  var fakeState = { entity: { id: id } };
+  if (window.geotab && window.geotab.customButtons && window.geotab.customButtons.printWorkOrder) {
+    window.geotab.customButtons.printWorkOrder({}, _api, fakeState);
+  } else {
+    alert('Print handler not loaded. Please refresh.');
+  }
+}
+
+// Allow Enter key in search input
+document.getElementById('wo-ref-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') searchByRef();
+});
+</script>
+</body>
+</html>

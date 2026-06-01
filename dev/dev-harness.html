@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Print Work Order — Dev Harness</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f6f8;
+      color: #1a1a1a;
+    }
+    .toolbar {
+      background: #2D3748;
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .toolbar h1 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-right: auto;
+    }
+    .toolbar label {
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toolbar select {
+      padding: 5px 8px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: #fff;
+      font-size: 13px;
+    }
+    .toolbar button {
+      padding: 7px 18px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-print {
+      background: #38A169;
+      color: #fff;
+    }
+    .btn-print:hover { background: #2F855A; }
+    .btn-settings {
+      background: #4A5568;
+      color: #fff;
+    }
+    .btn-settings:hover { background: #3a4457; }
+    .btn-reset {
+      background: #E53E3E;
+      color: #fff;
+    }
+    .btn-reset:hover { background: #C53030; }
+    .btn-real-print {
+      background: #2D7FF9;
+      color: #fff;
+    }
+    .btn-real-print:hover { background: #1a6ce5; }
+
+    .info-bar {
+      background: #EBF8FF;
+      border-bottom: 1px solid #BEE3F8;
+      padding: 10px 24px;
+      font-size: 12px;
+      color: #2B6CB0;
+    }
+    .info-bar code {
+      background: #BEE3F8;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    #preview-area {
+      padding: 20px;
+    }
+
+    .log {
+      background: #1A202C;
+      color: #A0AEC0;
+      padding: 12px 24px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .log .entry { margin: 2px 0; }
+    .log .entry.info { color: #63B3ED; }
+    .log .entry.success { color: #68D391; }
+    .log .entry.error { color: #FC8181; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>Print Work Order — Dev Harness</h1>
+    <label>
+      Scenario:
+      <select id="scenario-select">
+        <option value="brake-overhaul">Brake Overhaul (2 jobs, full data)</option>
+        <option value="oil-change">Oil Change (1 job, minimal data)</option>
+      </select>
+    </label>
+    <button class="btn-print" id="btn-preview" title="Show print layout on screen">Preview</button>
+    <button class="btn-real-print" id="btn-print" title="Open browser print dialog">Print</button>
+    <button class="btn-settings" id="btn-edit-shop">Edit Shop Info</button>
+    <button class="btn-reset" id="btn-reset">Reset Shop Info</button>
+  </div>
+  <div class="info-bar">
+    Dev harness simulates the MyGeotab button click using mock data.
+    <code>Preview</code> renders on-screen; <code>Print</code> triggers the browser print dialog.
+    Shop info auto-fills from mock CompanyDetails + User API data.
+  </div>
+
+  <div id="preview-area"></div>
+
+  <div class="log" id="log"></div>
+
+  <script src="mock-sdk.js"></script>
+  <script src="../printWorkOrder.js"></script>
+  <script>
+    const logEl = document.getElementById('log');
+    function log(msg, type) {
+      const entry = document.createElement('div');
+      entry.className = 'entry ' + (type || '');
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // Intercept console.log for mock API calls
+    const origLog = console.log;
+    console.log = function (...args) {
+      origLog.apply(console, args);
+      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      if (msg.includes('[Mock API]') || msg.includes('[WO Print]')) {
+        log(msg, 'info');
+      }
+    };
+
+    async function runSimulation(previewMode) {
+      const scenario = document.getElementById('scenario-select').value;
+      log(`Running scenario: ${scenario} (${previewMode ? 'preview' : 'print'})`, 'info');
+
+      // Clear previous preview
+      const existing = document.getElementById('wo-print-overlay');
+      if (existing) existing.remove();
+
+      const { api, state, mockData } = createMockApi(scenario);
+
+      // Build a fake state.entity with the WO ID
+      state.entity = { id: mockData.workOrder.id };
+
+      // Resolve shop info via the new API auto-fill flow
+      log('Resolving shop info (API auto-fill → localStorage → prompt)...', 'info');
+      const shopInfo = await window._woPrint.resolveShopInfo(api);
+      if (!shopInfo) {
+        log('User cancelled — no shop info', 'error');
+        return;
+      }
+      log(`Shop info resolved: "${shopInfo.name}" | ${shopInfo.address || '(no address)'} | ${shopInfo.phone || '(no phone)'}`, 'success');
+
+      try {
+        const { wo, jobs, device, openedByUser, assignedToUser } = await window._woPrint.fetchWorkOrderData(api, state);
+        log(`Fetched WO: ${wo.reference} with ${jobs.length} job(s)`, 'success');
+        log(`Device: ${device.name} (${device.vehicleIdentificationNumber})`, 'success');
+        log(`Opened by: ${openedByUser.firstName} ${openedByUser.lastName}`, 'success');
+
+        const html = window._woPrint.buildRepairOrderHTML(wo, jobs, device, openedByUser, assignedToUser, shopInfo);
+        window._woPrint.triggerPrint(html, previewMode);
+        log(previewMode ? 'Preview rendered below' : 'Print dialog triggered', 'success');
+      } catch (err) {
+        log('Error: ' + err.message, 'error');
+        console.error(err);
+      }
+    }
+
+    document.getElementById('btn-preview').addEventListener('click', () => runSimulation(true));
+    document.getElementById('btn-print').addEventListener('click', () => runSimulation(false));
+
+    document.getElementById('btn-edit-shop').addEventListener('click', async () => {
+      log('Opening shop info editor (manual override)', 'info');
+      const info = await window._woPrint.promptShopInfo();
+      if (info) {
+        log('Shop info updated: ' + info.name, 'success');
+      } else {
+        log('Edit cancelled', 'info');
+      }
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      window._woPrint.resetShopInfo();
+      log('Shop info cleared — next print will try API auto-fill first, then prompt if needed', 'success');
+    });
+
+    log('Dev harness loaded. Select a scenario and click Preview or Print.', 'info');
+    log('Shop info will auto-fill from mock CompanyDetails + User API on first run.', 'info');
+  </script>
+</body>
+</html>

@@ -4,14 +4,12 @@
   "version": "1.0.0",
   "items": [
     {
-      "page": "maintenanceWorkOrderDetails",
-      "button": {
-        "name": {
-          "en": "Print Work Order"
-        },
-        "icon": "https://rohanrajanwal.github.io/workorder-print-addin/icon.svg",
-        "click": "https://rohanrajanwal.github.io/workorder-print-addin/printWorkOrder.js"
-      }
+      "url": "https://rohanrajanwal.github.io/workorder-print-addin/printPanel.html",
+      "menuName": {
+        "en": "Print Work Order"
+      },
+      "icon": "https://rohanrajanwal.github.io/workorder-print-addin/icon.svg",
+      "path": "EngineMaintenanceLink/"
     }
   ],
   "isSigned": false

@@ -1,0 +1,15 @@
+{
+    "name": "Print Work Order",
+    "supportEmail": "rohandeep.rajanwal@geotab.com",
+    "version": "1.0",
+    "items": [
+        {
+            "page": "maintenanceWorkOrderDetails",
+            "click": "printWorkOrder.js",
+            "buttonName": {
+                "en": "Print"
+            }
+        }
+    ],
+    "isSigned": false
+}

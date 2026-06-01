@@ -1,0 +1,16 @@
+{
+  "name": "Print Work Order Button",
+  "supportEmail": "rohan@example.com",
+  "version": "1.0",
+  "isSigned": false,
+  "items": [
+    {
+      "page": "maintenanceWorkOrderDetails",
+      "click": "https://rohanrajanwal.github.io/workorder-print-addin/buttonHandler.js",
+      "buttonName": {
+        "en": "Print"
+      },
+      "svgIcon": "https://rohanrajanwal.github.io/workorder-print-addin/print-icon.svg"
+    }
+  ]
+}
