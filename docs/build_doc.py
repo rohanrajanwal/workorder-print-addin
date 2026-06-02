@@ -419,7 +419,7 @@ heading("3. The Configuration JSON, Decoded", level=1)
 
 add_code_block('''{
   "name": "Print Work Order",
-  "supportEmail": "rohandeep.rajanwal@geotab.com",
+  "supportEmail": "rohandeeprajanwal@geotab.com",
   "version": "1.0",
   "items": [{
     "page": "maintenanceWorkOrderDetails",
